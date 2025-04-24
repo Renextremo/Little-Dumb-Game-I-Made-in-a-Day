@@ -1,31 +1,393 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.13.35828.75 d17.13
-MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Game Test 1", "Game Test 1\Game Test 1.vcxproj", "{43BEC8A0-F560-4623-B11E-E4DBAC458E64}"
-EndProject
-Global
-	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|x64 = Debug|x64
-		Debug|x86 = Debug|x86
-		Release|x64 = Release|x64
-		Release|x86 = Release|x86
-	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{43BEC8A0-F560-4623-B11E-E4DBAC458E64}.Debug|x64.ActiveCfg = Debug|x64
-		{43BEC8A0-F560-4623-B11E-E4DBAC458E64}.Debug|x64.Build.0 = Debug|x64
-		{43BEC8A0-F560-4623-B11E-E4DBAC458E64}.Debug|x86.ActiveCfg = Debug|Win32
-		{43BEC8A0-F560-4623-B11E-E4DBAC458E64}.Debug|x86.Build.0 = Debug|Win32
-		{43BEC8A0-F560-4623-B11E-E4DBAC458E64}.Release|x64.ActiveCfg = Release|x64
-		{43BEC8A0-F560-4623-B11E-E4DBAC458E64}.Release|x64.Build.0 = Release|x64
-		{43BEC8A0-F560-4623-B11E-E4DBAC458E64}.Release|x86.ActiveCfg = Release|Win32
-		{43BEC8A0-F560-4623-B11E-E4DBAC458E64}.Release|x86.Build.0 = Release|Win32
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {0D570E4B-DC8B-43FC-B3F1-DE86B626297B}
-	EndGlobalSection
-EndGlobal
+#include <raylib.h>
+#include <vector>
+#include <cstdlib>
+
+
+#define MAX_SOUND 3
+enum sound_Asset {
+    EXPLOSION = 0, 
+    SHOOT,
+    HIT
+};
+Sound sound[MAX_SOUND];
+#define MAX_MUSIC 1
+enum music_Asset {
+    SONG = 0
+};
+Music music[MAX_MUSIC];
+
+struct Bullet {
+    Vector2 position;
+    bool active;
+};
+
+struct Star {
+    Vector2 position;
+    float speed;
+};
+
+struct Enemy {
+    Vector2 position;
+    bool active;
+    float speed; // Unique speed for each enemy
+};
+
+const int screenWidth = 800;
+const int screenHeight = 600;
+
+int main() {
+    // Initialize game
+    InitWindow(screenWidth, screenHeight, "Dumb Little Game I Made in a Day");
+    SetTargetFPS(60);
+    InitAudioDevice();
+
+	sound[EXPLOSION] = LoadSound("assets/explosion.wav");
+	sound[SHOOT] = LoadSound("assets/shoot.wav");
+	sound[HIT] = LoadSound("assets/hit.wav");
+
+    music[SONG] = LoadMusicStream("assets/song.wav");
+
+    PlayMusicStream(music[SONG]);
+
+   
+    
+
+    // Star setup
+    std::vector<Star> stars;
+    const int starCount = 50;
+    for (int i = 0; i < starCount; i++) {
+        Star star = {
+            { static_cast<float>(GetRandomValue(0, screenWidth)),
+              static_cast<float>(GetRandomValue(0, screenHeight)) },
+            static_cast<float>(GetRandomValue(150, 400))
+        };
+        stars.push_back(star);
+    }
+
+    int shotsFired = 0;
+
+    // Player health setup
+    int hitPoints = 3; // Player can take 3 hits
+    const int maxHitPoints = 3;
+    
+    // Counter for enemies that escape
+    int escapedEnemies = 0; 
+
+    // Game over
+    bool gameOver = false; 
+
+    // Player properties
+    Vector2 playerPos = { screenWidth / 2.0f, screenHeight - 50.0f };
+    const float playerSpeed = 300.0f;
+
+    // Bullets
+    std::vector<Bullet> bullets;
+    const float bulletSpeed = 500.0f;
+
+    // Enemies
+    std::vector<Enemy> enemies;
+
+    // Game timer setup
+    const float gameDuration = 60.0f;
+    float elapsedTime = 0.0f;
+
+    // Timer for enemy spawning
+    float spawnTimer = 0.0f;
+    float nextSpawnTime = static_cast<float>(GetRandomValue(50, 350)) / 50.0f; // 0.5 to 3 seconds
+
+    while (!WindowShouldClose()) {
+
+        // Update Music
+        UpdateMusicStream(music[SONG]);
+
+        // Delta time for consistent movement
+        float deltaTime = GetFrameTime();
+
+        // Update stars
+        for (auto& star : stars) {
+            star.position.y += star.speed * deltaTime;
+            if (star.position.y > screenHeight) {
+                star.position.y = 0;
+                star.position.x = static_cast<float>(GetRandomValue(0, screenWidth));
+            }
+        }
+
+
+        // Draw stars
+        for (const auto& star : stars) {
+            DrawRectangle(static_cast<int>(star.position.x), static_cast<int>(star.position.y), 2, 2, WHITE);
+        }
+
+        // Update timer
+        if (!gameOver) {
+            elapsedTime += deltaTime;
+            if (elapsedTime >= gameDuration) {
+                gameOver = true;
+            }
+        }
+
+        // Game over logic
+        if (hitPoints <= 0) {
+            gameOver = true;
+        }
+        if (gameOver) {
+            // Move player off-screen
+            playerPos.x = -100;
+            playerPos.y = -100;
+
+            // Move enemies off-screen
+            for (auto& enemy : enemies) {
+                enemy.position.y = -100;
+                enemy.active = false; // Deactivate enemy movement
+            }
+
+           
+        }
+
+        if (gameOver) {
+            BeginDrawing();
+            ClearBackground(BLACK);
+
+            Color shotsColor = GREEN;
+            if (shotsFired > 50) {
+                shotsColor = RED; // Too many shots
+            }
+            else if (shotsFired > 30) {
+                shotsColor = YELLOW; // Moderate shots
+            }
+            Color escapeColor = GREEN;
+            if (escapedEnemies > 3) {
+                escapeColor = RED; // Too many shots
+            }
+            else if (escapedEnemies > 0) {
+                escapeColor = YELLOW; // Moderate shots
+            }
+
+            // Draw "Game Over" or "Winning" message
+            if (elapsedTime >= gameDuration) {
+                DrawText("YOU SURVIVED!", screenWidth / 2 - 290, screenHeight / 2 - 100, 70, GREEN);
+                DrawText(TextFormat("Shots Fired: %i", shotsFired), screenWidth / 2 - 160, screenHeight / 2 + 60, 40, shotsColor);
+                DrawText(TextFormat("Enemies Escaped: %i", escapedEnemies), screenWidth / 2 - 200, screenHeight / 2 + 0, 40, escapeColor);
+                if ((escapedEnemies == 0) && (shotsFired < 30)) {
+                    DrawText(TextFormat("PERFECT GAME!"), screenWidth / 2 - 140, screenHeight / 2 + 120, 30, WHITE);
+                }
+                else if ((escapedEnemies < 4) && (shotsFired < 31)) {
+                    DrawText(TextFormat("GRADE: A"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }else if ((escapedEnemies < 4) && (shotsFired < 31)) {
+                    DrawText(TextFormat("GRADE: A"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }
+                else if ((escapedEnemies == 0) && (shotsFired < 51)) {
+                    DrawText(TextFormat("GRADE: A"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }
+                else if ((escapedEnemies < 4) && (shotsFired < 51)) {
+                    DrawText(TextFormat("GRADE: B"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }
+                else if ((escapedEnemies > 3) && (shotsFired < 31)) {
+                    DrawText(TextFormat("GRADE: B"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }
+                else if ((escapedEnemies == 0) && (shotsFired > 50)) {
+                    DrawText(TextFormat("GRADE: B"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }
+                else if ((escapedEnemies > 3) && (shotsFired < 51)) {
+                    DrawText(TextFormat("GRADE: C"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }
+                else if ((escapedEnemies < 4) && (shotsFired > 50)) {
+                    DrawText(TextFormat("GRADE: C"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }
+                else if ((escapedEnemies > 3) && (shotsFired > 50)) {
+                    DrawText(TextFormat("GRADE: D"), screenWidth / 2 - 80, screenHeight / 2 + 120, 30, WHITE);
+                }else{}
+            }
+            else {
+                DrawText("GAME OVER", screenWidth / 2 - 220, screenHeight / 2 - 100, 70, RED);
+            }
+            
+            DrawText("Press R to Restart or ESC to Exit", screenWidth / 2 - 190, screenHeight / 2 + 200, 20, WHITE);
+
+            // Restart or Exit
+            if (IsKeyPressed(KEY_R)) {
+                // Reset game variables
+                shotsFired = 0;
+                hitPoints = maxHitPoints;
+                escapedEnemies = 0;
+                elapsedTime = 0.0f;
+                enemies.clear();
+                bullets.clear();
+                gameOver = false;
+                playerPos = { screenWidth / 2.0f, screenHeight - 50.0f };
+            }
+            if (IsKeyPressed(KEY_ESCAPE)) {
+                break; // Exit the game
+            }
+        }
+
+        // Player movement
+        if (IsKeyDown(KEY_LEFT)) playerPos.x -= playerSpeed * deltaTime;
+        if (IsKeyDown(KEY_RIGHT)) playerPos.x += playerSpeed * deltaTime;
+
+        // Keep player within screen bounds
+        if (playerPos.x < 0) playerPos.x = 0;
+        if (playerPos.x > screenWidth - 50) playerPos.x = screenWidth - 50;
+
+        // Shooting bullets
+        if (!gameOver && IsKeyPressed(KEY_SPACE)) {
+            Bullet bullet = { {playerPos.x + 25.0f, playerPos.y - 10.0f}, true };
+            bullets.push_back(bullet);
+            shotsFired++;
+			PlaySound(sound[SHOOT]);
+        }
+
+        // Update bullets
+        for (auto& bullet : bullets) {
+            if (bullet.active) {
+                bullet.position.y -= bulletSpeed * deltaTime;
+                if (bullet.position.y < 0) bullet.active = false;
+            }
+        }
+
+        // Remove inactive bullets
+        bullets.erase(
+            std::remove_if(bullets.begin(), bullets.end(), [](Bullet& b) { return !b.active; }),
+            bullets.end()
+        );
+
+     
+
+        // Update enemies
+        spawnTimer += deltaTime;
+        if (spawnTimer >= nextSpawnTime) {
+            spawnTimer = 0.0f;
+            nextSpawnTime = static_cast<float>(GetRandomValue(50, 300)) / 100.0f; // New random interval
+
+            Enemy enemy = {
+                { static_cast<float>(GetRandomValue(0, screenWidth - 50)), -50.0f },
+                true
+            };
+
+            // Assign a random speed to this enemy
+            enemy.speed = static_cast<float>(GetRandomValue(100, 350));
+
+            enemies.push_back(enemy);
+        }
+        for (auto& enemy : enemies) {
+            if (enemy.active) {
+                enemy.position.y += enemy.speed * deltaTime;
+
+                // Check if the enemy escapes
+                if (enemy.position.y > screenHeight) {
+                    enemy.active = false;
+                    escapedEnemies++; // Increment escape counter
+                }
+            }
+        }
+
+        // Remove inactive enemies
+        enemies.erase(
+            std::remove_if(enemies.begin(), enemies.end(), [](Enemy& e) { return !e.active; }),
+            enemies.end()
+        );
+
+        // Collision detection
+        for (auto& bullet : bullets) {
+            if (!bullet.active) continue;
+            for (auto& enemy : enemies) {
+                if (!enemy.active) continue;
+
+                Rectangle bulletRect = { bullet.position.x, bullet.position.y, 5.0f, 10.0f };
+                Rectangle enemyRect = { enemy.position.x, enemy.position.y, 50.0f, 50.0f };
+
+
+                if (CheckCollisionRecs(bulletRect, enemyRect)) {
+                    PlaySound(sound[HIT]);
+                    bullet.active = false;
+                    enemy.active = false;
+                }
+            }
+			
+        }
+
+        // Collision detection with player and enemies
+        for (auto& enemy : enemies) {
+            Rectangle playerRect = { playerPos.x, playerPos.y, 50.0f, 50.0f };
+            Rectangle enemyRect = { enemy.position.x, enemy.position.y, 50.0f, 50.0f };
+
+            // If an enemy collides with the player, subtract health
+            if (CheckCollisionRecs(playerRect, enemyRect)) {
+                hitPoints--; // Decrease health when player is hit
+                enemy.active = false; // Destroy the enemy on collision
+				PlaySound(sound[EXPLOSION]);
+            }
+        }
+
+// Drawing
+        BeginDrawing();
+        ClearBackground(BLACK);
+
+        // Draw player
+        DrawRectangle(static_cast<int>(playerPos.x), static_cast<int>(playerPos.y), 50, 50, BLUE);
+
+        // Draw bullets
+        for (const auto& bullet : bullets) {
+            if (bullet.active) {
+                DrawRectangle(static_cast<int>(bullet.position.x), static_cast<int>(bullet.position.y), 5, 10, RED);
+            }
+        }
+
+        // Draw enemies
+        for (const auto& enemy : enemies) {
+            if (enemy.active) {
+                DrawRectangle(static_cast<int>(enemy.position.x), static_cast<int>(enemy.position.y), 50, 50, RED);
+            }
+        }
+
+        // Draw health bar
+        // Draw health squares
+        for (int i = 0; i < maxHitPoints; i++) {
+            for (int i = 0; i < maxHitPoints; i++) {
+                Color squareColor = GREEN;
+                for (int i = 0; i < maxHitPoints; i++) {
+                    Color squareColor = i < hitPoints ? GREEN : RED; // Green if health remains, Red if lost
+                    DrawRectangle(10 + (i * 60), 10, 50, 40, squareColor); // Offset squares horizontally
+                }
+            }
+        }
+
+
+        // Text for health
+        DrawText(TextFormat("Health: %i", hitPoints), 190, 20, 20, WHITE);
+
+        // Draw escape counter
+        Color escapeColor = GREEN;
+        if (escapedEnemies > 3) {
+            escapeColor = RED; // Too many shots
+        }
+        else if (escapedEnemies > 0) {
+            escapeColor = YELLOW; // Moderate shots
+        }
+        if (!gameOver) {
+            DrawText(TextFormat("Escaped: %i", escapedEnemies), 10, 60, 20, escapeColor);
+        }
+        // Draw timer
+        DrawText(TextFormat("Time: %.1f", gameDuration - elapsedTime), screenWidth - 120, 10, 20, WHITE);
+
+        Color shotsColor = GREEN;
+        if (shotsFired > 50) {
+            shotsColor = RED; // Too many shots
+        }
+        else if (shotsFired > 30) {
+            shotsColor = YELLOW; // Moderate shots
+        }
+        // Shots Fired
+        if (!gameOver) {
+            DrawText(TextFormat("Shots Fired: %i", shotsFired), 10, 90, 20, shotsColor);
+        }
+
+        EndDrawing();
+    }
+    StopMusicStream(music[SONG]);
+    UnloadMusicStream(music[SONG]);
+    
+
+    CloseWindow();
+    return 0;
+}
